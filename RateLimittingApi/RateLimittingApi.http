@@ -1,0 +1,6 @@
+@RateLimittingApi_HostAddress = http://localhost:5035
+
+GET {{RateLimittingApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
