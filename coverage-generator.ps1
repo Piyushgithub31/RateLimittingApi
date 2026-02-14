@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 
 # Parameters
 param(
@@ -7,12 +7,28 @@ param(
     [string]$OutputDir = "Reports"
 )
 
+# Determine script location (repository root) and normalize paths
+$ScriptRoot = $PSScriptRoot
+
+# If caller didn't pass SearchPath, default it to the script directory (repository root)
+if (-not $PSBoundParameters.ContainsKey('SearchPath')) {
+    $SearchPath = $ScriptRoot
+}
+
+# If OutputDir was not provided, default to <scriptroot>\Reports. If it is a relative path, make it relative to the script root.
+if (-not $PSBoundParameters.ContainsKey('OutputDir')) {
+    $OutputDir = Join-Path -Path $ScriptRoot -ChildPath 'Reports'
+}
+elseif (-not [System.IO.Path]::IsPathRooted($OutputDir)) {
+    $OutputDir = Join-Path -Path $ScriptRoot -ChildPath $OutputDir
+}
+
 # Function to check if dotnet CLI is available
 function Test-DotnetInstalled {
     try {
         $dotnetVersion = dotnet --version 2>$null
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "? .NET SDK found: $dotnetVersion"
+            Write-Host "OK: .NET SDK found: $dotnetVersion"
             return $true
         }
     }
@@ -26,8 +42,8 @@ function Test-DotnetInstalled {
 function Test-ReportGeneratorInstalled {
     try {
         $rgVersion = reportgenerator --version 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "? ReportGenerator found: $rgVersion"
+    if ($LASTEXITCODE -eq 0) {
+            Write-Host "OK: ReportGenerator found: $rgVersion"
             return $true
         }
     }
@@ -43,7 +59,7 @@ function Install-ReportGenerator {
     try {
         dotnet tool install -g dotnet-reportgenerator-globaltool
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "? ReportGenerator installed successfully"
+            Write-Host "OK: ReportGenerator installed successfully"
             return $true
         }
     }
@@ -59,12 +75,12 @@ Write-Host "Checking prerequisites..."
 Write-Host ""
 
 if (-not (Test-DotnetInstalled)) {
-    Write-Error "? .NET SDK is not installed. Please install .NET 8 SDK from https://dotnet.microsoft.com/download"
+    Write-Error "ERROR: .NET SDK is not installed. Please install .NET 8 SDK from https://dotnet.microsoft.com/download"
     exit 1
 }
 
 if (-not (Test-ReportGeneratorInstalled)) {
-    Write-Host "? ReportGenerator is not installed."
+    Write-Host "ERROR: ReportGenerator is not installed."
     
     # Attempt to install ReportGenerator
     if (-not (Install-ReportGenerator)) {
@@ -73,7 +89,7 @@ if (-not (Test-ReportGeneratorInstalled)) {
     }
 }
 
-Write-Host "? All prerequisites are available"
+Write-Host "OK: All prerequisites are available"
 Write-Host ""
 
 # Find the test project automatically
@@ -97,7 +113,7 @@ if (-not (Test-Path -Path $OutputDir)) {
 Write-Host "Restoring tools and packages..."
 try {
     dotnet tool restore 2>&1 | Out-Null
-    Write-Host "? Tools restored"
+    Write-Host "OK: Tools restored"
 }
 catch {
     Write-Warning "Warning: Could not restore tools: $_"
@@ -106,7 +122,7 @@ catch {
 try {
     Write-Host "Adding coverlet.collector package..."
     dotnet add $testProject package coverlet.collector 2>&1 | Out-Null
-    Write-Host "? coverlet.collector package added"
+    Write-Host "OK: coverlet.collector package added"
 }
 catch {
     Write-Warning "Warning: coverlet.collector may already be installed or could not be added: $_"
@@ -120,27 +136,27 @@ $testOutput = dotnet test $testProject --collect:"XPlat Code Coverage" --no-buil
 # Extract the path(s) to the generated cobertura.xml file(s)
 $coverageReports = @($testOutput | Select-String coverage.cobertura.xml | ForEach-Object { $_.Line.Trim() }) -join ';'
 
-if (-not $coverageReports) {
-    Write-Error "? Could not find coverage.cobertura.xml file paths in dotnet test output."
+    if (-not $coverageReports) {
+    Write-Error "ERROR: Could not find coverage.cobertura.xml file paths in dotnet test output."
     Write-Host "Test output:"
     Write-Host $testOutput
     exit 1
 }
 
-Write-Host "? Coverage data collected"
+Write-Host "OK: Coverage data collected"
 
 Write-Host "Generating HTML report in $OutputDir..."
 try {
     reportgenerator "-reports:$coverageReports" "-targetdir:$OutputDir" "-reporttypes:Html" 2>&1 | Out-Null
-    Write-Host "? HTML report generated successfully"
+    Write-Host "OK: HTML report generated successfully"
 }
 catch {
-    Write-Error "? Failed to generate report: $_"
+    Write-Error "❌ Failed to generate report: $_"
     exit 1
 }
 
 Write-Host ""
-Write-Host "? Code coverage report generated successfully!"
+Write-Host "OK: Code coverage report generated successfully!"
 Write-Host ""
 
 # Open the report in the default browser
@@ -149,9 +165,9 @@ if ($OpenReport) {
     Write-Host "Opening report: $reportIndex"
     try {
         start $reportIndex
-        Write-Host "? Report opened in default browser"
+        Write-Host "OK: Report opened in default browser"
     }
     catch {
-        Write-Warning "? Could not automatically open report. Please open manually: $reportIndex"
+        Write-Warning "WARNING: Could not automatically open report. Please open manually: $reportIndex"
     }
 }
