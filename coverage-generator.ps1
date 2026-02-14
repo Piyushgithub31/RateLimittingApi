@@ -40,39 +40,71 @@ function Test-DotnetInstalled {
 
 # Function to check if reportgenerator is installed
 function Test-ReportGeneratorInstalled {
+    # First try the command directly
     try {
-        $rgVersion = reportgenerator --version 2>$null
-    if ($LASTEXITCODE -eq 0) {
+        $rgVersion = & reportgenerator --version 2>&1
+        if ($LASTEXITCODE -eq 0) {
             Write-Host "OK: ReportGenerator found: $rgVersion"
             return $true
         }
     }
     catch {
-        return $false
+        # Fall through to check explicit path
     }
+    
+    # Check if it exists in dotnet tools directory
+    $dotnetToolsPath = Join-Path -Path $env:USERPROFILE -ChildPath ".dotnet\tools\reportgenerator.exe"
+    if (Test-Path -Path $dotnetToolsPath) {
+        Write-Host "OK: ReportGenerator found at: $dotnetToolsPath"
+        return $true
+    }
+    
     return $false
+}
+
+# Function to ensure dotnet tools directory is in PATH
+function Add-DotnetToolsToPath {
+    $dotnetToolsPath = Join-Path -Path $env:USERPROFILE -ChildPath ".dotnet\tools"
+    
+    if (-not ($env:Path -like "*$dotnetToolsPath*")) {
+        Write-Host "Adding .dotnet tools directory to PATH..."
+        $env:Path = "$dotnetToolsPath;$env:Path"
+    }
 }
 
 # Function to install reportgenerator globally
 function Install-ReportGenerator {
     Write-Host "Installing ReportGenerator globally..."
     try {
-        dotnet tool install -g dotnet-reportgenerator-globaltool
-        if ($LASTEXITCODE -eq 0) {
+        # Try to install, allowing skip if already installed
+        $output = dotnet tool install -g dotnet-reportgenerator-globaltool 2>&1
+        
+        # Check if installation succeeded or if it's already installed
+        if ($LASTEXITCODE -eq 0 -or $output -like "*already installed*") {
             Write-Host "OK: ReportGenerator installed successfully"
+            
+            # Add dotnet tools directory to PATH
+            Add-DotnetToolsToPath
+            
             return $true
+        }
+        else {
+            Write-Error "Installation output: $output"
+            return $false
         }
     }
     catch {
         Write-Error "Failed to install ReportGenerator: $_"
         return $false
     }
-    return $false
 }
 
 # Check and install prerequisites
 Write-Host "Checking prerequisites..."
 Write-Host ""
+
+# Ensure dotnet tools are in PATH
+Add-DotnetToolsToPath
 
 if (-not (Test-DotnetInstalled)) {
     Write-Error "ERROR: .NET SDK is not installed. Please install .NET 8 SDK from https://dotnet.microsoft.com/download"
@@ -80,11 +112,18 @@ if (-not (Test-DotnetInstalled)) {
 }
 
 if (-not (Test-ReportGeneratorInstalled)) {
-    Write-Host "ERROR: ReportGenerator is not installed."
+    Write-Host "WARNING: ReportGenerator is not installed."
     
     # Attempt to install ReportGenerator
-    if (-not (Install-ReportGenerator)) {
-        Write-Error "Could not install ReportGenerator. Please install it manually using: dotnet tool install -g dotnet-reportgenerator-globaltool"
+    if (Install-ReportGenerator) {
+        # Verify installation after install and PATH refresh
+        if (-not (Test-ReportGeneratorInstalled)) {
+            Write-Warning "ReportGenerator was installed but verification failed. Attempting to continue..."
+            # Don't exit, let the script try to use the explicit path
+        }
+    }
+    else {
+        Write-Error "ERROR: Could not install ReportGenerator. Please install it manually using: dotnet tool install -g dotnet-reportgenerator-globaltool"
         exit 1
     }
 }
@@ -147,11 +186,21 @@ Write-Host "OK: Coverage data collected"
 
 Write-Host "Generating HTML report in $OutputDir..."
 try {
-    reportgenerator "-reports:$coverageReports" "-targetdir:$OutputDir" "-reporttypes:Html" 2>&1 | Out-Null
+    # Try to use reportgenerator from PATH first, fall back to explicit path
+    $reportGeneratorCmd = "reportgenerator"
+    if (-not (Get-Command reportgenerator -ErrorAction SilentlyContinue)) {
+        $reportGeneratorCmd = Join-Path -Path $env:USERPROFILE -ChildPath ".dotnet\tools\reportgenerator.exe"
+        if (-not (Test-Path -Path $reportGeneratorCmd)) {
+            Write-Error "Could not find reportgenerator executable"
+            exit 1
+        }
+    }
+    
+    & $reportGeneratorCmd "-reports:$coverageReports" "-targetdir:$OutputDir" "-reporttypes:Html" 2>&1 | Out-Null
     Write-Host "OK: HTML report generated successfully"
 }
 catch {
-    Write-Error "❌ Failed to generate report: $_"
+    Write-Error "Failed to generate report: $_"
     exit 1
 }
 
