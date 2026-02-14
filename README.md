@@ -86,3 +86,27 @@ Example rate-limited response:
 
 ## Notes
 - The codebase is intentionally small and focused on demonstrating rate-limiting fundamentals.
+
+## Coverage report generator
+
+This repository includes a helper PowerShell script `coverage-generator.ps1` that automates generating an HTML code coverage report for the test project.
+
+- The script will search for the first `*Tests.csproj` under the provided search path (defaults to the repository root / current directory).
+- It ensures prerequisites are available: PowerShell 5.1+, the .NET SDK (this solution targets .NET 8) and the `dotnet-reportgenerator-globaltool`. The script will attempt to install the global tool if it is missing.
+- It restores dotnet tools, ensures `coverlet.collector` is added to the test project, runs `dotnet test --collect:"XPlat Code Coverage" --no-build`, extracts `coverage.cobertura.xml` paths from the test output and runs `reportgenerator` to produce an HTML report in `Reports/` (or a custom `-OutputDir`).
+- By default, the script will try to open `Reports/index.htm` in your default browser; pass `-OpenReport:$false` to prevent that.
+
+Usage (PowerShell):
+
+`powershell -File .\\coverage-generator.ps1 -OpenReport:$false`
+
+Optional parameters:
+
+- `-OpenReport:$true|$false` (default: `$true`) — open the generated report automatically.
+- `-SearchPath <path>` — override where the script searches for the test project.
+- `-OutputDir <path>` — specify the output directory for the HTML report (default: `Reports`).
+
+Notes:
+
+- The script expects the `dotnet test` output to include paths to `coverage.cobertura.xml`, which is produced when using the `coverlet.collector` data collector.
+- Installing the global tool may require adding the dotnet tools path to your PATH or restarting your shell.
